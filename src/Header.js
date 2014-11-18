@@ -45,6 +45,10 @@ function Header(calendar, options) {
 	
 	
 	function renderSection(position) {
+		if (position === 'left') {
+			var buttonGroup = $("<div id='fc-button-group-nav' class='btn-group'>");
+		}
+
 		var sectionEl = $('<div class="fc-' + position + '"/>');
 		var buttonStr = options.header[position];
 
@@ -108,11 +112,13 @@ function Header(calendar, options) {
 							];
 
 							button = $( // type="button" so that it doesn't submit a form
-								'<button type="button" class="' + classes.join(' ') + '">' +
+								'<button type="button" class="btn btn-default ' + classes.join(' ') + '">' +
 									innerHtml +
 								'</button>'
 								)
 								.click(function() {
+									this.blur();
+
 									// don't process clicks for disabled buttons
 									if (!button.hasClass(tm + '-state-disabled')) {
 
@@ -157,7 +163,14 @@ function Header(calendar, options) {
 									}
 								);
 
-							groupChildren = groupChildren.add(button);
+							if (buttonName === 'prev') {
+								button.appendTo(buttonGroup);
+							} else if (buttonName === 'next') {
+								button.appendTo(buttonGroup);
+								groupChildren = groupChildren.add(buttonGroup);
+							} else {
+								groupChildren = groupChildren.add(button);
+							}
 						}
 					}
 				});
@@ -193,27 +206,31 @@ function Header(calendar, options) {
 	
 	function activateButton(buttonName) {
 		el.find('.fc-' + buttonName + '-button')
-			.addClass(tm + '-state-active');
+			.addClass(tm + '-state-active')
+			.addClass('active');
 	}
 	
 	
 	function deactivateButton(buttonName) {
 		el.find('.fc-' + buttonName + '-button')
-			.removeClass(tm + '-state-active');
+			.removeClass(tm + '-state-active')
+			.removeClass('active');
 	}
 	
 	
 	function disableButton(buttonName) {
 		el.find('.fc-' + buttonName + '-button')
 			.attr('disabled', 'disabled')
-			.addClass(tm + '-state-disabled');
+			.addClass(tm + '-state-disabled')
+			.addClass('disabled');
 	}
 	
 	
 	function enableButton(buttonName) {
 		el.find('.fc-' + buttonName + '-button')
 			.removeAttr('disabled')
-			.removeClass(tm + '-state-disabled');
+			.removeClass(tm + '-state-disabled')
+			.removeClass('disabled');
 	}
 
 
