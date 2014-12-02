@@ -130,6 +130,16 @@ $.extend(AgendaView.prototype, {
 	renderHtml: function() {
 		return '' +
 			'<table>' +
+				'<caption>' +
+					'<center>' +
+						'<div class="input-group">' +
+							'<input id="fc-captionInput" type="text" class="form-control" placeholder="Text input">' +
+							'<span class="input-group-btn">' +
+								'<button id="fc-captionButton" class="btn btn-default" type="button">Speichern</button>' +
+							'</span>' +
+						'</div>' +
+					'</center>' +
+				'</caption>' +
 				'<thead>' +
 					'<tr>' +
 						'<td class="' + this.widgetHeaderClass + '">' +

@@ -255,3 +255,18 @@ be a descendant of the grid when it is being dragged.
 .fc-time-grid-event .fc-resizer:after {
 	content: "=";
 }
+
+
+/* caption input */
+
+.fc-toolbar {
+	margin-bottom: 0px !important;
+}
+
+caption {
+	padding-top: 0px !important;
+}
+
+caption .input-group {
+	width: 60%;
+}

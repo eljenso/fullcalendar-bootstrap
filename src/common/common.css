@@ -104,7 +104,7 @@ body .fc { /* extra precedence to overcome jqui */
 /* Buttons (styled <button> tags, normalized to work cross-browser)
 --------------------------------------------------------------------------------------------------*/
 
-.fc button {
+.fc button:not(.btn) {
 	/* force height to include the border and padding */
 	-moz-box-sizing: border-box;
 	-webkit-box-sizing: border-box;
