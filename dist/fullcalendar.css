@@ -915,14 +915,10 @@ be a descendant of the grid when it is being dragged.
 
 /* caption input */
 
-.fc-toolbar {
-	margin-bottom: 0px !important;
+.fc-view-container caption {
+	padding-top: 0px;
 }
 
-caption {
-	padding-top: 0px !important;
-}
-
-caption .input-group {
+.fc-view-container caption .input-group {
 	width: 60%;
 }
