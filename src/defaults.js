@@ -21,6 +21,8 @@ var defaults = {
 
 	weekNumberTitle: 'W',
 	weekNumberCalculation: 'local',
+
+	showCaption: false,
 	
 	//editable: false,
 	

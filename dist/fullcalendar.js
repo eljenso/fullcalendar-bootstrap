@@ -37,6 +37,8 @@ var defaults = {
 
 	weekNumberTitle: 'W',
 	weekNumberCalculation: 'local',
+
+	showCaption: false,
 	
 	//editable: false,
 	
@@ -8894,8 +8896,23 @@ $.extend(AgendaView.prototype, {
 	// Builds the HTML skeleton for the view.
 	// The day-grid and time-grid components will render inside containers defined by this HTML.
 	renderHtml: function() {
-		return '' +
-			'<table>' +
+		var table = '<table>';
+
+		if (this.calendar.options.showCaption) {
+			table += '' +
+				'<caption>' +
+					'<center>' +
+						'<div class="input-group">' +
+							'<input id="fc-captionInput" type="text" class="form-control">' +
+							'<span class="input-group-btn">' +
+								'<button id="fc-captionButton" class="btn btn-default" type="button">Speichern</button>' +
+							'</span>' +
+						'</div>' +
+					'</center>' +
+				'</caption>';
+		}
+
+		table += '' +
 				'<thead>' +
 					'<tr>' +
 						'<td class="' + this.widgetHeaderClass + '">' +
@@ -8918,6 +8935,8 @@ $.extend(AgendaView.prototype, {
 					'</tr>' +
 				'</tbody>' +
 			'</table>';
+
+		return table;
 	},
 
 

@@ -104,7 +104,7 @@ body .fc { /* extra precedence to overcome jqui */
 /* Buttons (styled <button> tags, normalized to work cross-browser)
 --------------------------------------------------------------------------------------------------*/
 
-.fc button {
+.fc button:not(.btn) {
 	/* force height to include the border and padding */
 	-moz-box-sizing: border-box;
 	-webkit-box-sizing: border-box;
@@ -573,7 +573,7 @@ a.fc-more:hover {
 
 /* undo twitter bootstrap's box-sizing rules. normalizes positioning techniques */
 /* don't do this for the toolbar because we'll want bootstrap to style those buttons as some pt */
-.fc-view-container *,
+.fc-view-container *:not(input),
 .fc-view-container *:before,
 .fc-view-container *:after {
 	-webkit-box-sizing: content-box;
@@ -910,4 +910,19 @@ be a descendant of the grid when it is being dragged.
 
 .fc-time-grid-event .fc-resizer:after {
 	content: "=";
+}
+
+
+/* caption input */
+
+.fc-toolbar {
+	margin-bottom: 0px !important;
+}
+
+caption {
+	padding-top: 0px !important;
+}
+
+caption .input-group {
+	width: 60%;
 }
