@@ -132,7 +132,7 @@ $.extend(AgendaView.prototype, {
 
 		if (this.calendar.options.showCaption) {
 			table += '' +
-				'<caption>' +
+				'<caption class="fc-caption">' +
 					'<center>' +
 						'<div class="input-group">' +
 							'<input id="fc-captionInput" type="text" class="form-control">' +
