@@ -101,7 +101,9 @@ var defaults = {
 	dayPopoverFormat: 'LL',
 	
 	handleWindowResize: true,
-	windowResizeDelay: 200 // milliseconds before a rerender happens
+	windowResizeDelay: 200, // milliseconds before a rerender happens
+
+	dayColumnButtons: false // whether to show the day column buttons
 	
 };
 

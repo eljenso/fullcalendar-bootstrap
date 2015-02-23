@@ -373,7 +373,9 @@ $.extend(Grid.prototype, {
 
 		return '' +
 			'<th class="fc-day-header ' + view.widgetHeaderClass + ' fc-' + dayIDs[date.day()] + '">' +
-				htmlEscape(calendar.formatDate(date, colFormat)) +
+				(view.name !== 'month' && calendar.options.dayColumnButtons ? '<button type="button" class="btn btn-default btn-xs btn-fc-dayHeader" style="margin: 2px auto">' : '') +
+					htmlEscape(calendar.formatDate(date, colFormat)) +
+				(view.name !== 'month' && calendar.options.dayColumnButtons ? '</button>' : '') +
 			'</th>';
 	},
 

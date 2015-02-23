@@ -135,6 +135,12 @@ body .fc { /* extra precedence to overcome jqui */
 }
 
 
+/* button in day column headers */
+.fc .btn-fc-dayHeader {
+  font-weight: bold;
+}
+
+
 
 /* Buttons Groups
 --------------------------------------------------------------------------------------------------*/

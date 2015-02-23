@@ -117,7 +117,9 @@ var defaults = {
 	dayPopoverFormat: 'LL',
 	
 	handleWindowResize: true,
-	windowResizeDelay: 200 // milliseconds before a rerender happens
+	windowResizeDelay: 200, // milliseconds before a rerender happens
+
+	dayColumnButtons: false // whether to show the day column buttons
 	
 };
 
@@ -4789,7 +4791,9 @@ $.extend(Grid.prototype, {
 
 		return '' +
 			'<th class="fc-day-header ' + view.widgetHeaderClass + ' fc-' + dayIDs[date.day()] + '">' +
-				htmlEscape(calendar.formatDate(date, colFormat)) +
+				(view.name !== 'month' && calendar.options.dayColumnButtons ? '<button type="button" class="btn btn-default btn-xs btn-fc-dayHeader" style="margin: 2px auto">' : '') +
+					htmlEscape(calendar.formatDate(date, colFormat)) +
+				(view.name !== 'month' && calendar.options.dayColumnButtons ? '</button>' : '') +
 			'</th>';
 	},
 
@@ -8900,7 +8904,7 @@ $.extend(AgendaView.prototype, {
 
 		if (this.calendar.options.showCaption) {
 			table += '' +
-				'<caption>' +
+				'<caption class="fc-caption">' +
 					'<center>' +
 						'<div class="input-group">' +
 							'<input id="fc-captionInput" type="text" class="form-control">' +
