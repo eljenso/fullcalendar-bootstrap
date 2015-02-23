@@ -2,7 +2,7 @@
 /* Event-rendering methods for the DayGrid class
 ----------------------------------------------------------------------------------------------------------------------*/
 
-$.extend(DayGrid.prototype, {
+DayGrid.mixin({
 
 	rowStructs: null, // an array of objects, each holding information about a row's foreground event-rendering
 
@@ -15,8 +15,8 @@ $.extend(DayGrid.prototype, {
 
 
 	// Retrieves all rendered segment objects currently rendered on the grid
-	getSegs: function() {
-		return Grid.prototype.getSegs.call(this) // get the segments from the super-method
+	getEventSegs: function() {
+		return Grid.prototype.getEventSegs.call(this) // get the segments from the super-method
 			.concat(this.popoverSegs || []); // append the segments from the "more..." popover
 	},
 
@@ -91,20 +91,26 @@ $.extend(DayGrid.prototype, {
 	// Builds the HTML to be used for the default element for an individual segment
 	fgSegHtml: function(seg, disableResizing) {
 		var view = this.view;
-		var isRTL = view.opt('isRTL');
 		var event = seg.event;
 		var isDraggable = view.isEventDraggable(event);
-		var isResizable = !disableResizing && event.allDay && seg.isEnd && view.isEventResizable(event);
-		var classes = this.getSegClasses(seg, isDraggable, isResizable);
-		var skinCss = this.getEventSkinCss(event);
+		var isResizableFromStart = !disableResizing && event.allDay &&
+			seg.isStart && view.isEventResizableFromStart(event);
+		var isResizableFromEnd = !disableResizing && event.allDay &&
+			seg.isEnd && view.isEventResizableFromEnd(event);
+		var classes = this.getSegClasses(seg, isDraggable, isResizableFromStart || isResizableFromEnd);
+		var skinCss = cssToStr(this.getEventSkinCss(event));
 		var timeHtml = '';
+		var timeText;
 		var titleHtml;
 
-		classes.unshift('fc-day-grid-event');
+		classes.unshift('fc-day-grid-event', 'fc-h-event');
 
 		// Only display a timed events time if it is the starting segment
-		if (!event.allDay && seg.isStart) {
-			timeHtml = '<span class="fc-time">' + htmlEscape(view.getEventTimeText(event)) + '</span>';
+		if (seg.isStart) {
+			timeText = this.getEventTimeText(event);
+			if (timeText) {
+				timeHtml = '<span class="fc-time">' + htmlEscape(timeText) + '</span>';
+			}
 		}
 
 		titleHtml =
@@ -123,13 +129,17 @@ $.extend(DayGrid.prototype, {
 					) +
 			'>' +
 				'<div class="fc-content">' +
-					(isRTL ?
+					(this.isRTL ?
 						titleHtml + ' ' + timeHtml : // put a natural space in between
 						timeHtml + ' ' + titleHtml   //
 						) +
 				'</div>' +
-				(isResizable ?
-					'<div class="fc-resizer"/>' :
+				(isResizableFromStart ?
+					'<div class="fc-resizer fc-start-resizer" />' :
+					''
+					) +
+				(isResizableFromEnd ?
+					'<div class="fc-resizer fc-end-resizer" />' :
 					''
 					) +
 			'</a>';
@@ -138,9 +148,9 @@ $.extend(DayGrid.prototype, {
 
 	// Given a row # and an array of segments all in the same row, render a <tbody> element, a skeleton that contains
 	// the segments. Returns object with a bunch of internal data about how the render was calculated.
+	// NOTE: modifies rowSegs
 	renderSegRow: function(row, rowSegs) {
-		var view = this.view;
-		var colCnt = view.colCnt;
+		var colCnt = this.colCnt;
 		var segLevels = this.buildSegLevels(rowSegs); // group into sub-arrays of levels
 		var levelCnt = Math.max(1, segLevels.length); // ensure at least one level
 		var tbody = $('<tbody/>');
@@ -227,6 +237,7 @@ $.extend(DayGrid.prototype, {
 
 
 	// Stacks a flat array of segments, which are all assumed to be in the same row, into subarrays of vertical levels.
+	// NOTE: modifies segs
 	buildSegLevels: function(segs) {
 		var levels = [];
 		var i, seg;
@@ -263,11 +274,10 @@ $.extend(DayGrid.prototype, {
 
 	// Given a flat array of segments, return an array of sub-arrays, grouped by each segment's row
 	groupSegRows: function(segs) {
-		var view = this.view;
 		var segRows = [];
 		var i;
 
-		for (i = 0; i < view.rowCnt; i++) {
+		for (i = 0; i < this.rowCnt; i++) {
 			segRows.push([]);
 		}
 

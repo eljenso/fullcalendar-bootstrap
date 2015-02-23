@@ -2,74 +2,276 @@
 /* An abstract class comprised of a "grid" of cells that each represent a specific datetime
 ----------------------------------------------------------------------------------------------------------------------*/
 
-function Grid(view) {
-	RowRenderer.call(this, view); // call the super-constructor
-	this.coordMap = new GridCoordMap(this);
-	this.elsByFill = {};
-}
+var Grid = fc.Grid = RowRenderer.extend({
 
+	start: null, // the date of the first cell
+	end: null, // the date after the last cell
 
-Grid.prototype = createObject(RowRenderer.prototype); // declare the super-class
-$.extend(Grid.prototype, {
+	rowCnt: 0, // number of rows
+	colCnt: 0, // number of cols
+	rowData: null, // array of objects, holding misc data for each row
+	colData: null, // array of objects, holding misc data for each column
 
 	el: null, // the containing element
 	coordMap: null, // a GridCoordMap that converts pixel values to datetimes
-	cellDuration: null, // a cell's duration. subclasses must assign this ASAP
 	elsByFill: null, // a hash of jQuery element sets used for rendering each fill. Keyed by fill name.
 
+	externalDragStartProxy: null, // binds the Grid's scope to externalDragStart (in DayGrid.events)
 
-	// Renders the grid into the `el` element.
-	// Subclasses should override and call this super-method when done.
-	render: function() {
-		this.bindHandlers();
+	// derived from options
+	colHeadFormat: null, // TODO: move to another class. not applicable to all Grids
+	eventTimeFormat: null,
+	displayEventTime: null,
+	displayEventEnd: null,
+
+	// if all cells are the same length of time, the duration they all share. optional.
+	// when defined, allows the computeCellRange shortcut, as well as improved resizing behavior.
+	cellDuration: null,
+
+	// if defined, holds the unit identified (ex: "year" or "month") that determines the level of granularity
+	// of the date cells. if not defined, assumes to be day and time granularity.
+	largeUnit: null,
+
+
+	constructor: function() {
+		RowRenderer.apply(this, arguments); // call the super-constructor
+
+		this.coordMap = new GridCoordMap(this);
+		this.elsByFill = {};
+		this.externalDragStartProxy = proxy(this, 'externalDragStart');
 	},
 
 
-	// Called when the grid's resources need to be cleaned up
-	destroy: function() {
-		// subclasses can implement
-	},
-
-
-	/* Coordinates & Cells
+	/* Options
 	------------------------------------------------------------------------------------------------------------------*/
 
 
-	// Populates the given empty arrays with the y and x coordinates of the cells
-	buildCoords: function(rows, cols) {
-		// subclasses must implement
+	// Generates the format string used for the text in column headers, if not explicitly defined by 'columnFormat'
+	// TODO: move to another class. not applicable to all Grids
+	computeColHeadFormat: function() {
+		// subclasses must implement if they want to use headHtml()
 	},
 
 
-	// Given a cell object, returns the date for that cell
-	getCellDate: function(cell) {
-		// subclasses must implement
+	// Generates the format string used for event time text, if not explicitly defined by 'timeFormat'
+	computeEventTimeFormat: function() {
+		return this.view.opt('smallTimeFormat');
 	},
 
 
-	// Given a cell object, returns the element that represents the cell's whole-day
-	getCellDayEl: function(cell) {
+	// Determines whether events should have their end times displayed, if not explicitly defined by 'displayEventTime'.
+	// Only applies to non-all-day events.
+	computeDisplayEventTime: function() {
+		return true;
+	},
+
+
+	// Determines whether events should have their end times displayed, if not explicitly defined by 'displayEventEnd'
+	computeDisplayEventEnd: function() {
+		return true;
+	},
+
+
+	/* Dates
+	------------------------------------------------------------------------------------------------------------------*/
+
+
+	// Tells the grid about what period of time to display. Grid will subsequently compute dates for cell system.
+	setRange: function(range) {
+		var view = this.view;
+		var displayEventTime;
+		var displayEventEnd;
+
+		this.start = range.start.clone();
+		this.end = range.end.clone();
+
+		this.rowData = [];
+		this.colData = [];
+		this.updateCells();
+
+		// Populate option-derived settings. Look for override first, then compute if necessary.
+		this.colHeadFormat = view.opt('columnFormat') || this.computeColHeadFormat();
+
+		this.eventTimeFormat =
+			view.opt('eventTimeFormat') ||
+			view.opt('timeFormat') || // deprecated
+			this.computeEventTimeFormat();
+
+		displayEventTime = view.opt('displayEventTime');
+		if (displayEventTime == null) {
+			displayEventTime = this.computeDisplayEventTime(); // might be based off of range
+		}
+
+		displayEventEnd = view.opt('displayEventEnd');
+		if (displayEventEnd == null) {
+			displayEventEnd = this.computeDisplayEventEnd(); // might be based off of range
+		}
+
+		this.displayEventTime = displayEventTime;
+		this.displayEventEnd = displayEventEnd;
+	},
+
+
+	// Responsible for setting rowCnt/colCnt and any other row/col data
+	updateCells: function() {
 		// subclasses must implement
 	},
 
 
 	// Converts a range with an inclusive `start` and an exclusive `end` into an array of segment objects
-	rangeToSegs: function(start, end) {
+	rangeToSegs: function(range) {
 		// subclasses must implement
 	},
 
 
-	/* Handlers
+	// Diffs the two dates, returning a duration, based on granularity of the grid
+	diffDates: function(a, b) {
+		if (this.largeUnit) {
+			return diffByUnit(a, b, this.largeUnit);
+		}
+		else {
+			return diffDayTime(a, b);
+		}
+	},
+
+
+	/* Cells
+	------------------------------------------------------------------------------------------------------------------*/
+	// NOTE: columns are ordered left-to-right
+
+
+	// Gets an object containing row/col number, misc data, and range information about the cell.
+	// Accepts row/col values, an object with row/col properties, or a single-number offset from the first cell.
+	getCell: function(row, col) {
+		var cell;
+
+		if (col == null) {
+			if (typeof row === 'number') { // a single-number offset
+				col = row % this.colCnt;
+				row = Math.floor(row / this.colCnt);
+			}
+			else { // an object with row/col properties
+				col = row.col;
+				row = row.row;
+			}
+		}
+
+		cell = { row: row, col: col };
+
+		$.extend(cell, this.getRowData(row), this.getColData(col));
+		$.extend(cell, this.computeCellRange(cell));
+
+		return cell;
+	},
+
+
+	// Given a cell object with index and misc data, generates a range object
+	// If the grid is leveraging cellDuration, this doesn't need to be defined. Only computeCellDate does.
+	// If being overridden, should return a range with reference-free date copies.
+	computeCellRange: function(cell) {
+		var date = this.computeCellDate(cell);
+
+		return {
+			start: date,
+			end: date.clone().add(this.cellDuration)
+		};
+	},
+
+
+	// Given a cell, returns its start date. Should return a reference-free date copy.
+	computeCellDate: function(cell) {
+		// subclasses can implement
+	},
+
+
+	// Retrieves misc data about the given row
+	getRowData: function(row) {
+		return this.rowData[row] || {};
+	},
+
+
+	// Retrieves misc data baout the given column
+	getColData: function(col) {
+		return this.colData[col] || {};
+	},
+
+
+	// Retrieves the element representing the given row
+	getRowEl: function(row) {
+		// subclasses should implement if leveraging the default getCellDayEl() or computeRowCoords()
+	},
+
+
+	// Retrieves the element representing the given column
+	getColEl: function(col) {
+		// subclasses should implement if leveraging the default getCellDayEl() or computeColCoords()
+	},
+
+
+	// Given a cell object, returns the element that represents the cell's whole-day
+	getCellDayEl: function(cell) {
+		return this.getColEl(cell.col) || this.getRowEl(cell.row);
+	},
+
+
+	/* Cell Coordinates
 	------------------------------------------------------------------------------------------------------------------*/
 
 
-	// Attach handlers to `this.el`, using bubbling to listen to all ancestors.
-	// We don't need to undo any of this in a "destroy" method, because the view will simply remove `this.el` from the
-	// DOM and jQuery will be smart enough to garbage collect the handlers.
-	bindHandlers: function() {
+	// Computes the top/bottom coordinates of all rows.
+	// By default, queries the dimensions of the element provided by getRowEl().
+	computeRowCoords: function() {
+		var items = [];
+		var i, el;
+		var top;
+
+		for (i = 0; i < this.rowCnt; i++) {
+			el = this.getRowEl(i);
+			top = el.offset().top;
+			items.push({
+				top: top,
+				bottom: top + el.outerHeight()
+			});
+		}
+
+		return items;
+	},
+
+
+	// Computes the left/right coordinates of all rows.
+	// By default, queries the dimensions of the element provided by getColEl(). Columns can be LTR or RTL.
+	computeColCoords: function() {
+		var items = [];
+		var i, el;
+		var left;
+
+		for (i = 0; i < this.colCnt; i++) {
+			el = this.getColEl(i);
+			left = el.offset().left;
+			items.push({
+				left: left,
+				right: left + el.outerWidth()
+			});
+		}
+
+		return items;
+	},
+
+
+	/* Rendering
+	------------------------------------------------------------------------------------------------------------------*/
+
+
+	// Sets the container element that the grid should render inside of.
+	// Does other DOM-related initializations.
+	setElement: function(el) {
 		var _this = this;
 
-		this.el.on('mousedown', function(ev) {
+		this.el = el;
+
+		// attach a handler to the grid's root element.
+		// jQuery will take care of unregistering them when removeElement gets called.
+		el.on('mousedown', function(ev) {
 			if (
 				!$(ev.target).is('.fc-event-container *, .fc-more') && // not an an event element, or "more.." link
 				!$(ev.target).closest('.fc-popover').length // not on a popover (like the "more.." events one)
@@ -78,7 +280,57 @@ $.extend(Grid.prototype, {
 			}
 		});
 
-		this.bindSegHandlers(); // attach event-element-related handlers. in Grid.events.js
+		// attach event-element-related handlers. in Grid.events
+		// same garbage collection note as above.
+		this.bindSegHandlers();
+
+		this.bindGlobalHandlers();
+	},
+
+
+	// Removes the grid's container element from the DOM. Undoes any other DOM-related attachments.
+	// DOES NOT remove any content before hand (doens't clear events or call destroyDates), unlike View
+	removeElement: function() {
+		this.unbindGlobalHandlers();
+
+		this.el.remove();
+
+		// NOTE: we don't null-out this.el for the same reasons we don't do it within View::removeElement
+	},
+
+
+	// Renders the basic structure of grid view before any content is rendered
+	renderSkeleton: function() {
+		// subclasses should implement
+	},
+
+
+	// Renders the grid's date-related content (like cells that represent days/times).
+	// Assumes setRange has already been called and the skeleton has already been rendered.
+	renderDates: function() {
+		// subclasses should implement
+	},
+
+
+	// Unrenders the grid's date-related content
+	destroyDates: function() {
+		// subclasses should implement
+	},
+
+
+	/* Handlers
+	------------------------------------------------------------------------------------------------------------------*/
+
+
+	// Binds DOM handlers to elements that reside outside the grid, such as the document
+	bindGlobalHandlers: function() {
+		$(document).on('dragstart sortstart', this.externalDragStartProxy); // jqui
+	},
+
+
+	// Unbinds DOM handlers from elements that reside outside the grid
+	unbindGlobalHandlers: function() {
+		$(document).off('dragstart sortstart', this.externalDragStartProxy); // jqui
 	},
 
 
@@ -86,56 +338,46 @@ $.extend(Grid.prototype, {
 	dayMousedown: function(ev) {
 		var _this = this;
 		var view = this.view;
-		var calendar = view.calendar;
 		var isSelectable = view.opt('selectable');
-		var dates = null; // the inclusive dates of the selection. will be null if no selection
-		var start; // the inclusive start of the selection
-		var end; // the *exclusive* end of the selection
-		var dayEl;
+		var dayClickCell; // null if invalid dayClick
+		var selectionRange; // null if invalid selection
 
 		// this listener tracks a mousedown on a day element, and a subsequent drag.
 		// if the drag ends on the same day, it is a 'dayClick'.
 		// if 'selectable' is enabled, this listener also detects selections.
-		var dragListener = new DragListener(this.coordMap, {
+		var dragListener = new CellDragListener(this.coordMap, {
 			//distance: 5, // needs more work if we want dayClick to fire correctly
 			scroll: view.opt('dragScroll'),
 			dragStart: function() {
 				view.unselect(); // since we could be rendering a new selection, we want to clear any old one
 			},
-			cellOver: function(cell, date) {
-				if (dragListener.origDate) { // click needs to have started on a cell
-
-					dayEl = _this.getCellDayEl(cell);
-
-					dates = [ date, dragListener.origDate ].sort(compareNumbers); // works with Moments
-					start = dates[0];
-					end = dates[1].clone().add(_this.cellDuration);
-
+			cellOver: function(cell, isOrig, origCell) {
+				if (origCell) { // click needs to have started on a cell
+					dayClickCell = isOrig ? cell : null; // single-cell selection is a day click
 					if (isSelectable) {
-						if (calendar.isSelectionAllowedInRange(start, end)) { // allowed to select within this range?
-							_this.renderSelection(start, end);
+						selectionRange = _this.computeSelection(origCell, cell);
+						if (selectionRange) {
+							_this.renderSelection(selectionRange);
 						}
 						else {
-							dates = null; // flag for an invalid selection
 							disableCursor();
 						}
 					}
 				}
 			},
-			cellOut: function(cell, date) {
-				dates = null;
+			cellOut: function(cell) {
+				dayClickCell = null;
+				selectionRange = null;
 				_this.destroySelection();
 				enableCursor();
 			},
 			listenStop: function(ev) {
-				if (dates) { // started and ended on a cell?
-					if (dates[0].isSame(dates[1])) {
-						view.trigger('dayClick', dayEl[0], start, ev);
-					}
-					if (isSelectable) {
-						// the selection will already have been rendered. just report it
-						view.reportSelection(start, end, ev);
-					}
+				if (dayClickCell) {
+					view.trigger('dayClick', _this.getCellDayEl(dayClickCell), dayClickCell.start, ev);
+				}
+				if (selectionRange) {
+					// the selection will already have been rendered. just report it
+					view.reportSelection(selectionRange, ev);
 				}
 				enableCursor();
 			}
@@ -145,61 +387,29 @@ $.extend(Grid.prototype, {
 	},
 
 
-	/* Event Dragging
-	------------------------------------------------------------------------------------------------------------------*/
-
-
-	// Renders a visual indication of a event being dragged over the given date(s).
-	// `end` can be null, as well as `seg`. See View's documentation on renderDrag for more info.
-	// A returned value of `true` signals that a mock "helper" event has been rendered.
-	renderDrag: function(start, end, seg) {
-		// subclasses must implement
-	},
-
-
-	// Unrenders a visual indication of an event being dragged
-	destroyDrag: function() {
-		// subclasses must implement
-	},
-
-
-	/* Event Resizing
-	------------------------------------------------------------------------------------------------------------------*/
-
-
-	// Renders a visual indication of an event being resized.
-	// `start` and `end` are the updated dates of the event. `seg` is the original segment object involved in the drag.
-	renderResize: function(start, end, seg) {
-		// subclasses must implement
-	},
-
-
-	// Unrenders a visual indication of an event being resized.
-	destroyResize: function() {
-		// subclasses must implement
-	},
-
-
 	/* Event Helper
 	------------------------------------------------------------------------------------------------------------------*/
+	// TODO: should probably move this to Grid.events, like we did event dragging / resizing
 
 
-	// Renders a mock event over the given date(s).
-	// `end` can be null, in which case the mock event that is rendered will have a null end time.
+	// Renders a mock event over the given range
+	renderRangeHelper: function(range, sourceSeg) {
+		var fakeEvent = this.fabricateHelperEvent(range, sourceSeg);
+
+		this.renderHelper(fakeEvent, sourceSeg); // do the actual rendering
+	},
+
+
+	// Builds a fake event given a date range it should cover, and a segment is should be inspired from.
+	// The range's end can be null, in which case the mock event that is rendered will have a null end time.
 	// `sourceSeg` is the internal segment object involved in the drag. If null, something external is dragging.
-	renderRangeHelper: function(start, end, sourceSeg) {
-		var view = this.view;
-		var fakeEvent;
+	fabricateHelperEvent: function(range, sourceSeg) {
+		var fakeEvent = sourceSeg ? createObject(sourceSeg.event) : {}; // mask the original event object if possible
 
-		// compute the end time if forced to do so (this is what EventManager does)
-		if (!end && view.opt('forceEventDuration')) {
-			end = view.calendar.getDefaultEventEnd(!start.hasTime(), start);
-		}
-
-		fakeEvent = sourceSeg ? createObject(sourceSeg.event) : {}; // mask the original event object if possible
-		fakeEvent.start = start;
-		fakeEvent.end = end;
-		fakeEvent.allDay = !(start.hasTime() || (end && end.hasTime())); // freshly compute allDay
+		fakeEvent.start = range.start.clone();
+		fakeEvent.end = range.end ? range.end.clone() : null;
+		fakeEvent.allDay = null; // force it to be freshly computed by normalizeEventRange
+		this.view.calendar.normalizeEventRange(fakeEvent);
 
 		// this extra className will be useful for differentiating real events from mock events in CSS
 		fakeEvent.className = (fakeEvent.className || []).concat('fc-helper');
@@ -209,7 +419,7 @@ $.extend(Grid.prototype, {
 			fakeEvent.editable = false;
 		}
 
-		this.renderHelper(fakeEvent, sourceSeg); // do the actual rendering
+		return fakeEvent;
 	},
 
 
@@ -230,8 +440,8 @@ $.extend(Grid.prototype, {
 
 
 	// Renders a visual indication of a selection. Will highlight by default but can be overridden by subclasses.
-	renderSelection: function(start, end) {
-		this.renderHighlight(start, end);
+	renderSelection: function(range) {
+		this.renderHighlight(range);
 	},
 
 
@@ -241,13 +451,40 @@ $.extend(Grid.prototype, {
 	},
 
 
+	// Given the first and last cells of a selection, returns a range object.
+	// Will return something falsy if the selection is invalid (when outside of selectionConstraint for example).
+	// Subclasses can override and provide additional data in the range object. Will be passed to renderSelection().
+	computeSelection: function(firstCell, lastCell) {
+		var dates = [
+			firstCell.start,
+			firstCell.end,
+			lastCell.start,
+			lastCell.end
+		];
+		var range;
+
+		dates.sort(compareNumbers); // sorts chronologically. works with Moments
+
+		range = {
+			start: dates[0].clone(),
+			end: dates[3].clone()
+		};
+
+		if (!this.view.calendar.isSelectionRangeAllowed(range)) {
+			return null;
+		}
+
+		return range;
+	},
+
+
 	/* Highlight
 	------------------------------------------------------------------------------------------------------------------*/
 
 
 	// Renders an emphasis on the given date range. `start` is inclusive. `end` is exclusive.
-	renderHighlight: function(start, end) {
-		this.renderFill('highlight', this.rangeToSegs(start, end));
+	renderHighlight: function(range) {
+		this.renderFill('highlight', this.rangeToSegs(range));
 	},
 
 
@@ -269,7 +506,7 @@ $.extend(Grid.prototype, {
 
 	// Renders a set of rectangles over the given segments of time.
 	// Returns a subset of segs, the segs that were actually rendered.
-	// Responsible for populating this.elsByFill
+	// Responsible for populating this.elsByFill. TODO: better API for expressing this requirement
 	renderFill: function(type, segs) {
 		// subclasses must implement
 	},
@@ -336,14 +573,17 @@ $.extend(Grid.prototype, {
 
 	// Builds the HTML needed for one fill segment. Generic enought o work with different types.
 	fillSegHtml: function(type, seg) {
-		var classesMethod = this[type + 'SegClasses']; // custom hooks per-type
-		var stylesMethod = this[type + 'SegStyles']; //
+
+		// custom hooks per-type
+		var classesMethod = this[type + 'SegClasses'];
+		var cssMethod = this[type + 'SegCss'];
+
 		var classes = classesMethod ? classesMethod.call(this, seg) : [];
-		var styles = stylesMethod ? stylesMethod.call(this, seg) : ''; // a semi-colon separated CSS property string
+		var css = cssToStr(cssMethod ? cssMethod.call(this, seg) : {});
 
 		return '<' + this.fillSegTag +
 			(classes.length ? ' class="' + classes.join(' ') + '"' : '') +
-			(styles ? ' style="' + styles + '"' : '') +
+			(css ? ' style="' + css + '"' : '') +
 			' />';
 	},
 
@@ -352,7 +592,8 @@ $.extend(Grid.prototype, {
 	------------------------------------------------------------------------------------------------------------------*/
 
 
-	// Renders a day-of-week header row
+	// Renders a day-of-week header row.
+	// TODO: move to another class. not applicable to all Grids
 	headHtml: function() {
 		return '' +
 			'<div class="fc-row ' + this.view.widgetHeaderClass + '">' +
@@ -366,28 +607,31 @@ $.extend(Grid.prototype, {
 
 
 	// Used by the `headHtml` method, via RowRenderer, for rendering the HTML of a day-of-week header cell
-	headCellHtml: function(row, col, date) {
+	// TODO: move to another class. not applicable to all Grids
+	headCellHtml: function(cell) {
 		var view = this.view;
-		var calendar = view.calendar;
-		var colFormat = view.opt('columnFormat');
+		var date = cell.start;
 
 		return '' +
 			'<th class="fc-day-header ' + view.widgetHeaderClass + ' fc-' + dayIDs[date.day()] + '">' +
-				(view.name !== 'month' && calendar.options.dayColumnButtons ? '<button type="button" class="btn btn-default btn-xs btn-fc-dayHeader" style="margin: 2px auto">' : '') +
-					htmlEscape(calendar.formatDate(date, colFormat)) +
-				(view.name !== 'month' && calendar.options.dayColumnButtons ? '</button>' : '') +
+				(view.name !== 'month' && view.options.dayColumnButtons ? '<button type="button" class="btn btn-default btn-xs btn-fc-dayHeader" style="margin: 2px auto">' : '') +
+				  htmlEscape(date.format(this.colHeadFormat)) +
+				(view.name !== 'month' && view.options.dayColumnButtons ? '</button>' : '') +
 			'</th>';
 	},
 
 
 	// Renders the HTML for a single-day background cell
-	bgCellHtml: function(row, col, date) {
+	bgCellHtml: function(cell) {
 		var view = this.view;
+		var date = cell.start;
 		var classes = this.getDayClasses(date);
 
 		classes.unshift('fc-day', view.widgetContentClass);
 
-		return '<td class="' + classes.join(' ') + '" data-date="' + date.format() + '"></td>';
+		return '<td class="' + classes.join(' ') + '"' +
+			' data-date="' + date.format('YYYY-MM-DD') + '"' + // if date has a time, won't format it
+			'></td>';
 	},
 
 
@@ -398,7 +642,7 @@ $.extend(Grid.prototype, {
 		var classes = [ 'fc-' + dayIDs[date.day()] ];
 
 		if (
-			view.name === 'month' &&
+			view.intervalDuration.as('months') == 1 &&
 			date.month() != view.intervalStart.month()
 		) {
 			classes.push('fc-other-month');

@@ -2,7 +2,7 @@
 /* Event-rendering methods for the TimeGrid class
 ----------------------------------------------------------------------------------------------------------------------*/
 
-$.extend(TimeGrid.prototype, {
+TimeGrid.mixin({
 
 	eventSkeletonEl: null, // has cells with event-containers, which contain absolutely positioned event elements
 
@@ -104,29 +104,30 @@ $.extend(TimeGrid.prototype, {
 		var view = this.view;
 		var event = seg.event;
 		var isDraggable = view.isEventDraggable(event);
-		var isResizable = !disableResizing && seg.isEnd && view.isEventResizable(event);
-		var classes = this.getSegClasses(seg, isDraggable, isResizable);
-		var skinCss = this.getEventSkinCss(event);
+		var isResizableFromStart = !disableResizing && seg.isStart && view.isEventResizableFromStart(event);
+		var isResizableFromEnd = !disableResizing && seg.isEnd && view.isEventResizableFromEnd(event);
+		var classes = this.getSegClasses(seg, isDraggable, isResizableFromStart || isResizableFromEnd);
+		var skinCss = cssToStr(this.getEventSkinCss(event));
 		var timeText;
 		var fullTimeText; // more verbose time text. for the print stylesheet
 		var startTimeText; // just the start time text
 
-		classes.unshift('fc-time-grid-event');
+		classes.unshift('fc-time-grid-event', 'fc-v-event');
 
 		if (view.isMultiDayEvent(event)) { // if the event appears to span more than one day...
 			// Don't display time text on segments that run entirely through a day.
 			// That would appear as midnight-midnight and would look dumb.
 			// Otherwise, display the time text for the *segment's* times (like 6pm-midnight or midnight-10am)
 			if (seg.isStart || seg.isEnd) {
-				timeText = view.getEventTimeText(seg.start, seg.end);
-				fullTimeText = view.getEventTimeText(seg.start, seg.end, 'LT');
-				startTimeText = view.getEventTimeText(seg.start, null);
+				timeText = this.getEventTimeText(seg);
+				fullTimeText = this.getEventTimeText(seg, 'LT');
+				startTimeText = this.getEventTimeText(seg, null, false); // displayEnd=false
 			}
 		} else {
 			// Display the normal time text for the *event's* times
-			timeText = view.getEventTimeText(event);
-			fullTimeText = view.getEventTimeText(event, 'LT');
-			startTimeText = view.getEventTimeText(event.start, null);
+			timeText = this.getEventTimeText(event);
+			fullTimeText = this.getEventTimeText(event, 'LT');
+			startTimeText = this.getEventTimeText(event, null, false); // displayEnd=false
 		}
 
 		return '<a class="' + classes.join(' ') + '"' +
@@ -157,8 +158,14 @@ $.extend(TimeGrid.prototype, {
 						) +
 				'</div>' +
 				'<div class="fc-bg"/>' +
-				(isResizable ?
-					'<div class="fc-resizer"/>' :
+				/* TODO: write CSS for this
+				(isResizableFromStart ?
+					'<div class="fc-resizer fc-start-resizer" />' :
+					''
+					) +
+				*/
+				(isResizableFromEnd ?
+					'<div class="fc-resizer fc-end-resizer" />' :
 					''
 					) +
 			'</a>';
@@ -168,9 +175,7 @@ $.extend(TimeGrid.prototype, {
 	// Generates an object with CSS properties/values that should be applied to an event segment element.
 	// Contains important positioning-related properties that should be applied to any event element, customized or not.
 	generateSegPositionCss: function(seg) {
-		var view = this.view;
-		var isRTL = view.opt('isRTL');
-		var shouldOverlap = view.opt('slotEventOverlap');
+		var shouldOverlap = this.view.opt('slotEventOverlap');
 		var backwardCoord = seg.backwardCoord; // the left side if LTR. the right side if RTL. floating-point
 		var forwardCoord = seg.forwardCoord; // the right side if LTR. the left side if RTL. floating-point
 		var props = this.generateSegVerticalCss(seg); // get top/bottom first
@@ -182,7 +187,7 @@ $.extend(TimeGrid.prototype, {
 			forwardCoord = Math.min(1, backwardCoord + (forwardCoord - backwardCoord) * 2);
 		}
 
-		if (isRTL) {
+		if (this.isRTL) {
 			left = 1 - forwardCoord;
 			right = backwardCoord;
 		}
@@ -197,7 +202,7 @@ $.extend(TimeGrid.prototype, {
 
 		if (shouldOverlap && seg.forwardPressure) {
 			// add padding to the edge so that forward stacked events don't cover the resizer's icon
-			props[isRTL ? 'marginLeft' : 'marginRight'] = 10 * 2; // 10 is a guesstimate of the icon's width 
+			props[this.isRTL ? 'marginLeft' : 'marginRight'] = 10 * 2; // 10 is a guesstimate of the icon's width
 		}
 
 		return props;
@@ -215,11 +220,10 @@ $.extend(TimeGrid.prototype, {
 
 	// Given a flat array of segments, return an array of sub-arrays, grouped by each segment's col
 	groupSegCols: function(segs) {
-		var view = this.view;
 		var segCols = [];
 		var i;
 
-		for (i = 0; i < view.colCnt; i++) {
+		for (i = 0; i < this.colCnt; i++) {
 			segCols.push([]);
 		}
 
@@ -234,7 +238,7 @@ $.extend(TimeGrid.prototype, {
 
 
 // Given an array of segments that are all in the same column, sets the backwardCoord and forwardCoord on each.
-// Also reorders the given array by date!
+// NOTE: Also reorders the given array by date!
 function placeSlotSegs(segs) {
 	var levels;
 	var level0;
