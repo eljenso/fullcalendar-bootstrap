@@ -614,7 +614,7 @@ var Grid = fc.Grid = RowRenderer.extend({
 
 		return '' +
 			'<th class="fc-day-header ' + view.widgetHeaderClass + ' fc-' + dayIDs[date.day()] + '">' +
-				(view.name !== 'month' && view.options.dayColumnButtons ? '<button type="button" class="btn btn-default btn-xs btn-fc-dayHeader" style="margin: 2px auto">' : '') +
+				(view.name !== 'month' && view.options.dayColumnButtons ? '<button type="button" class="btn btn-default btn-xs btn-fc-dayHeader" title="' + view.options.dayColumnButtonsTooltip + '" style="margin: 2px auto">' : '') +
 				  htmlEscape(date.format(this.colHeadFormat)) +
 				(view.name !== 'month' && view.options.dayColumnButtons ? '</button>' : '') +
 			'</th>';
